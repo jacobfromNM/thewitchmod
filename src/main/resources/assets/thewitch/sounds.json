@@ -1,0 +1,17 @@
+{
+  "witch_scream": {
+    "sounds": [
+      "thewitch:witch_scream"
+    ]
+  },
+  "witch_ambient": {
+    "sounds": [
+      "thewitch:witch_ambient"
+    ]
+  },
+  "witch_attack": {
+    "sounds": [
+      "thewitch:witch_attack"
+    ]
+  }
+}
