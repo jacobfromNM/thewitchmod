@@ -24,6 +24,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.network.chat.Component;
@@ -40,6 +41,8 @@ public class StalkerWitchEntity extends Monster {
     private int ambientSoundCooldown = 0;
     private boolean initialized = false;
     private boolean isTriggered = false;
+    private Vec3 teleportTarget = null;
+    private int teleportPhaseTicks = 0;
 
     /**
      * Constructor for the Stalker Witch entity.
@@ -68,11 +71,11 @@ public class StalkerWitchEntity extends Monster {
      */
     public static AttributeSupplier.Builder createAttributes() {
         return net.minecraft.world.entity.LivingEntity.createLivingAttributes()
-                .add(Attributes.ATTACK_DAMAGE, 15.0D)
+                .add(Attributes.ATTACK_DAMAGE, 20.0D)
                 .add(Attributes.MOVEMENT_SPEED, 0.5D)
                 .add(Attributes.FOLLOW_RANGE, 32.0D)
                 .add(Attributes.MAX_HEALTH, 40.0D)
-                .add(Attributes.ATTACK_KNOCKBACK, 1.0D);
+                .add(Attributes.ATTACK_KNOCKBACK, 2.0D);
     }
 
     /**
@@ -83,11 +86,10 @@ public class StalkerWitchEntity extends Monster {
         super.tick();
 
         if (!initialized) {
-            if (this.getAttributes().hasAttribute(Attributes.ATTACK_DAMAGE)) {
+            if (this.getAttributes().hasAttribute(Attributes.ATTACK_DAMAGE))
                 initialized = true;
-            } else {
+            else
                 return;
-            }
         }
 
         if (this.level.isClientSide)
@@ -95,25 +97,104 @@ public class StalkerWitchEntity extends Monster {
 
         existenceTicks++; // Always increment
 
+        // Get the nearest player, you know who you are...
         Player player = this.level.getNearestPlayer(this, 256);
         if (player != null) {
             this.lookAt(EntityAnchorArgument.Anchor.EYES, player.position());
 
             if (isTriggered) {
-                this.getNavigation().moveTo(player, WitchModConfig.WITCH_SPEED.get());
                 triggeredTicks++;
 
-                if (this.distanceToSqr(player) < 2.5D) {
-                    this.doHurtTarget(player);
+                // Every 15 ticks, grab the players position, check distance, and
+                // teleport/attack accordingly
+                if (triggeredTicks % 15 == 0) {
+                    Vec3 currentPos = this.position();
+                    Vec3 targetPos = player.position();
+                    double distanceSqr = currentPos.distanceToSqr(targetPos);
+
+                    // If the player is greater than 3 blocks away, teleport
+                    if (distanceSqr > 9.0D) {
+                        Vec3 direction = targetPos.subtract(currentPos).scale(0.5);
+                        Vec3 nextStep = currentPos.add(direction);
+
+                        // Jitter for spookiness
+                        double jitter = 1.5;
+                        nextStep = nextStep.add((random.nextDouble() - 0.5) * jitter, 0,
+                                (random.nextDouble() - 0.5) * jitter);
+
+                        BlockPos base = new BlockPos(nextStep);
+                        boolean teleported = false;
+
+                        // Scan downward for a safe Y-value (max 12 blocks)
+                        for (int dy = 0; dy <= 12; dy++) {
+                            BlockPos checkPos = base.below(dy);
+                            if (level.getBlockState(checkPos).isAir()
+                                    && level.getBlockState(checkPos.below()).getMaterial().isSolid()) {
+                                Vec3 finalPos = new Vec3(checkPos.getX() + 0.5, checkPos.getY(), checkPos.getZ() + 0.5);
+                                if (WitchModConfig.ENABLE_LOGGING.get())
+                                    TheWitch.LOGGER.info(
+                                            "[The Witch] Found a valid teleport position (downward scan): {}",
+                                            finalPos);
+
+                                // Play the warden hearbeat sound
+                                level.playSound(null, checkPos, SoundEvents.WARDEN_HEARTBEAT, SoundSource.HOSTILE, 1.0F,
+                                        1.0F);
+                                this.teleportTo(finalPos.x, finalPos.y, finalPos.z);
+                                teleported = true;
+                                break;
+                            }
+                        }
+
+                        // If downward scan fails, try scanning upward (max 12 blocks)
+                        if (!teleported) {
+                            for (int dy = 1; dy <= 12; dy++) {
+                                BlockPos checkPos = base.above(dy);
+                                if (level.getBlockState(checkPos).isAir()
+                                        && level.getBlockState(checkPos.below()).getMaterial().isSolid()) {
+                                    Vec3 finalPos = new Vec3(checkPos.getX() + 0.5, checkPos.getY(),
+                                            checkPos.getZ() + 0.5);
+                                    if (WitchModConfig.ENABLE_LOGGING.get())
+                                        TheWitch.LOGGER.info(
+                                                "[The Witch] Found a valid teleport position (upward scan): {}",
+                                                finalPos);
+                                    // Play the warden hearbeat sound
+                                    level.playSound(null, checkPos, SoundEvents.WARDEN_HEARTBEAT, SoundSource.HOSTILE,
+                                            1.0F, 1.0F);
+                                    this.teleportTo(finalPos.x, finalPos.y, finalPos.z);
+                                    // level().playSound(null, checkPos, SoundEvents.ENDERMAN_TELEPORT,
+                                    // SoundSource.HOSTILE, 0.5f, 0.5f);
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        double distance = this.distanceTo(player);
+
+                        if (distance < 2.5D) {
+                            // Immediately attack
+                            this.doHurtTarget(player);
+                        } else {
+                            // Rush forward with pathfinding for a short time
+                            this.getNavigation().moveTo(player, WitchModConfig.WITCH_SPEED.get()); // sprint toward
+                                                                                                   // them!
+
+                            if (WitchModConfig.PLAY_ATTACK_SOUND.get()) {
+                                level.playSound(null, this.blockPosition(), ModSounds.WITCH_ATTACK.get(),
+                                        SoundSource.HOSTILE, 0.8F, 1.0F);
+                            }
+                        }
+                    }
+
                 }
 
-                // Despawn after 20 seconds if triggered
-                if (triggeredTicks >= 400) {
+                // Despawn after 30 seconds if triggered
+                if (triggeredTicks >= 600) {
                     this.discard();
-                    if (WitchModConfig.ENABLE_LOGGING.get()) TheWitch.LOGGER.info("[The Witch] Despawning witch (triggered).");
+                    if (WitchModConfig.ENABLE_LOGGING.get())
+                        TheWitch.LOGGER.info("[The Witch] Despawning witch (triggered).");
+                    teleportTarget = null;
                     return;
                 }
-
             } else {
                 if (player.hasLineOfSight(this) && isPlayerLookingAtMe(player)) {
                     stareTicks++;
@@ -140,7 +221,8 @@ public class StalkerWitchEntity extends Monster {
 
         // Despawn after 5 minutes if NOT triggered
         if (!isTriggered && existenceTicks >= 6000) {
-            if (WitchModConfig.ENABLE_LOGGING.get()) TheWitch.LOGGER.info("[The Witch] Despawning witch (not triggered).");
+            if (WitchModConfig.ENABLE_LOGGING.get())
+                TheWitch.LOGGER.info("[The Witch] Despawning witch (not triggered).");
             this.discard();
         }
     }
@@ -156,16 +238,22 @@ public class StalkerWitchEntity extends Monster {
         player.displayClientMessage(Component.literal("§4The Witch approaches..."), true);
 
         // Play sound effects (Thunderclap and Warden heartbeat)
-        this.level.playSound(null, player.blockPosition(), SoundEvents.LIGHTNING_BOLT_IMPACT, SoundSource.WEATHER, 2.0F, 1.0F);
-        this.level.playSound(null, player.blockPosition(), SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.WEATHER, 2.0F, 1.0F);
-        this.level.playSound(null, player.blockPosition(), SoundEvents.WARDEN_HEARTBEAT, SoundSource.HOSTILE, 1.5F, 1.0F);
-        
+        this.level.playSound(null, player.blockPosition(), SoundEvents.LIGHTNING_BOLT_IMPACT, SoundSource.WEATHER, 2.0F,
+                1.0F);
+        this.level.playSound(null, player.blockPosition(), SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.WEATHER,
+                2.0F, 1.0F);
+        this.level.playSound(null, player.blockPosition(), SoundEvents.WARDEN_HEARTBEAT, SoundSource.HOSTILE, 1.5F,
+                1.0F);
+
         // Break nearby light sources
+        if (WitchModConfig.ENABLE_LOGGING.get())
+            TheWitch.LOGGER.info("[The Witch] Starting the light break sequence...");
         breakNearbyLights(player);
 
         // Apply darkness effect
         player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 400, 2, false, false));
-        if (WitchModConfig.ENABLE_LOGGING.get()) TheWitch.LOGGER.info("[The Witch] Scare sequence completed.");
+        if (WitchModConfig.ENABLE_LOGGING.get())
+            TheWitch.LOGGER.info("[The Witch] Scare sequence completed.");
     }
 
     /**
@@ -220,7 +308,12 @@ public class StalkerWitchEntity extends Monster {
 
         BlockPos.betweenClosedStream(
                 pos.offset(-radius, -20, -radius),
-                pos.offset(radius, 20, radius)).forEach(blockPos -> {
+                pos.offset(radius, 20, radius))
+                .filter(blockPos -> {
+                    // Only check blocks in *loaded* chunks
+                    return this.level.hasChunkAt(blockPos);
+                })
+                .forEach(blockPos -> {
                     BlockState state = this.level.getBlockState(blockPos);
                     if (isBreakableLightBlock(state)) {
                         this.level.destroyBlock(blockPos, false);
@@ -235,30 +328,29 @@ public class StalkerWitchEntity extends Monster {
      * @return True if the block is breakable, false otherwise.
      */
     private boolean isBreakableLightBlock(BlockState state) {
-        return state.is(Blocks.TORCH)
-                || state.is(Blocks.WALL_TORCH)
-                || state.is(Blocks.SOUL_TORCH)
-                || state.is(Blocks.SOUL_WALL_TORCH)
-                || state.is(Blocks.REDSTONE_TORCH)
-                || state.is(Blocks.REDSTONE_WALL_TORCH)
-                || state.is(Blocks.LANTERN)
-                || state.is(Blocks.SOUL_LANTERN)
-                || state.is(Blocks.CAMPFIRE)
-                || state.is(Blocks.SOUL_CAMPFIRE)
-                || state.is(Blocks.END_ROD)
-                || state.is(Blocks.GLOWSTONE)
-                || state.is(Blocks.SEA_LANTERN)
-                || state.is(Blocks.SHROOMLIGHT)
-                || state.is(Blocks.JACK_O_LANTERN)
-                || state.is(Blocks.VERDANT_FROGLIGHT)
-                || state.is(Blocks.PEARLESCENT_FROGLIGHT)
-                || state.is(Blocks.OCHRE_FROGLIGHT)
-                || state.is(Blocks.AMETHYST_BLOCK)
-                || state.is(Blocks.LARGE_AMETHYST_BUD)
-                || state.is(Blocks.MEDIUM_AMETHYST_BUD)
-                || state.is(Blocks.SMALL_AMETHYST_BUD)
-                || state.is(Blocks.GLOW_LICHEN)
-                || state.is(Blocks.GLOWSTONE);
+        int lightLevel = state.getLightEmission();
+        if (lightLevel <= 0)
+            return false;
+
+        Block block = state.getBlock();
+
+        // Exclude critical/dangerous blocks
+        if (block == Blocks.END_PORTAL
+                || block == Blocks.END_GATEWAY
+                || block == Blocks.NETHER_PORTAL
+                || block == Blocks.BEACON
+                || block == Blocks.LAVA
+                || block == Blocks.FIRE
+                || block == Blocks.SOUL_FIRE
+                || block == Blocks.BEDROCK
+                || block == Blocks.FURNACE
+                || block == Blocks.BLAST_FURNACE
+                || block == Blocks.SMOKER) {
+            return false;
+        }
+
+        // If it emits light and isn't on the forbidden list — she's breakin' it
+        return true;
     }
 
     /**
@@ -285,7 +377,8 @@ public class StalkerWitchEntity extends Monster {
                         1.0F // Pitch
                 );
             }
-            if (WitchModConfig.ENABLE_LOGGING.get()) TheWitch.LOGGER.info("[The Witch] Received damage from player - despawning.");
+            if (WitchModConfig.ENABLE_LOGGING.get())
+                TheWitch.LOGGER.info("[The Witch] Received damage from player - despawning.");
             this.discard(); // Despawn
         }
         return result;
@@ -308,7 +401,8 @@ public class StalkerWitchEntity extends Monster {
                     this.getSoundSource(),
                     0.8F, 1.0F);
         }
-        if (WitchModConfig.ENABLE_LOGGING.get()) TheWitch.LOGGER.info("[The Witch] Attacked target.");
+        if (WitchModConfig.ENABLE_LOGGING.get())
+            TheWitch.LOGGER.info("[The Witch] Attacked target.");
         return result;
     }
 

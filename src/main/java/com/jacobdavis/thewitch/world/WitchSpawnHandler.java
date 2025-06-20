@@ -150,7 +150,7 @@ public class WitchSpawnHandler {
         clearAreaAboveGround(level, spawnPos);
 
         // Place candles in a cross formation...
-        placeRitualCandles(level, spawnPos);
+        if (WitchModConfig.SPAWN_CANDLES.get()) placeRitualCandles(level, spawnPos);
 
         // Things are looking good, let's spawn the witch/books...
         spawnCycleCount++;
