@@ -1,6 +1,8 @@
 {
   "pack": {
-    "pack_format": 9,
-    "description": "Resources for The Witch mod"
+    "description": {
+      "text": "examplemod resources"
+    },
+    "pack_format": 15
   }
 }
