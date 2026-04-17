@@ -24,11 +24,15 @@ import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import java.util.ArrayDeque;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -43,6 +47,7 @@ extends Monster {
     private boolean isTriggered = false;
     private Vec3 teleportTarget = null;
     private int teleportPhaseTicks = 0;
+    private final ArrayDeque<BlockPos> pendingLightBreaks = new ArrayDeque<>();
 
     public StalkerWitchEntity(EntityType<? extends Monster> type, Level world) {
         super(type, world);
@@ -76,6 +81,16 @@ extends Monster {
         }
         if (this.level.isClientSide) {
             return;
+        }
+        if (!this.pendingLightBreaks.isEmpty()) {
+            int budget = 20;
+            while (budget-- > 0 && !this.pendingLightBreaks.isEmpty()) {
+                BlockPos bp = this.pendingLightBreaks.poll();
+                if (bp == null) break;
+                if (this.isBreakableLightBlock(this.level.getBlockState(bp))) {
+                    this.level.destroyBlock(bp, false);
+                }
+            }
         }
         ++this.existenceTicks;
         Player player = this.level.getNearestPlayer(this, 256.0);
@@ -178,7 +193,7 @@ extends Monster {
         if (((Boolean)WitchModConfig.ENABLE_LOGGING.get()).booleanValue()) {
             TheWitch.LOGGER.info("[The Witch] Starting the light break sequence...");
         }
-        this.breakNearbyLights(player);
+        this.collectLightsToBreak(player);
         player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 400, 2, false, false));
         if (((Boolean)WitchModConfig.ENABLE_LOGGING.get()).booleanValue()) {
             TheWitch.LOGGER.info("[The Witch] Scare sequence completed.");
@@ -200,15 +215,58 @@ extends Monster {
         return rayTraceResult.getType() != HitResult.Type.BLOCK || !((hitDistance = start.distanceTo(rayTraceResult.getLocation())) < distance - 1.0);
     }
 
-    private void breakNearbyLights(Player player) {
-        BlockPos pos = player.blockPosition();
-        int radius = (Integer)WitchModConfig.LIGHT_BREAK_RADIUS.get();
-        BlockPos.betweenClosedStream(pos.offset(-radius, -20, -radius), pos.offset(radius, 20, radius)).filter(blockPos -> this.level.hasChunkAt(blockPos)).forEach(blockPos -> {
-            BlockState state = this.level.getBlockState(blockPos);
-            if (this.isBreakableLightBlock(state)) {
-                this.level.destroyBlock(blockPos, false);
+    private void collectLightsToBreak(Player player) {
+        BlockPos playerPos = player.blockPosition();
+        int radius = (Integer) WitchModConfig.LIGHT_BREAK_RADIUS.get();
+
+        int minChunkX = SectionPos.blockToSectionCoord(playerPos.getX() - radius);
+        int maxChunkX = SectionPos.blockToSectionCoord(playerPos.getX() + radius);
+        int minChunkZ = SectionPos.blockToSectionCoord(playerPos.getZ() - radius);
+        int maxChunkZ = SectionPos.blockToSectionCoord(playerPos.getZ() + radius);
+        int minBlockY = playerPos.getY() - 20;
+        int maxBlockY = playerPos.getY() + 20;
+
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                if (!this.level.getChunkSource().hasChunk(chunkX, chunkZ)) continue;
+                LevelChunk chunk = this.level.getChunk(chunkX, chunkZ);
+
+                int minSectionY = SectionPos.blockToSectionCoord(
+                        Math.max(minBlockY, this.level.getMinBuildHeight()));
+                int maxSectionY = SectionPos.blockToSectionCoord(
+                        Math.min(maxBlockY, this.level.getMaxBuildHeight() - 1));
+
+                for (int sectionY = minSectionY; sectionY <= maxSectionY; sectionY++) {
+                    int sectionIdx = chunk.getSectionIndexFromSectionY(sectionY);
+                    if (sectionIdx < 0 || sectionIdx >= chunk.getSections().length) continue;
+
+                    LevelChunkSection section = chunk.getSection(sectionIdx);
+                    if (section.hasOnlyAir()) continue;
+                    if (!section.maybeHas(s -> s.getLightEmission() > 0)) continue;
+
+                    int sectionBaseY = SectionPos.sectionToBlockCoord(sectionY);
+                    int worldChunkBaseX = SectionPos.sectionToBlockCoord(chunkX);
+                    int worldChunkBaseZ = SectionPos.sectionToBlockCoord(chunkZ);
+
+                    for (int ly = 0; ly < 16; ly++) {
+                        int worldY = sectionBaseY + ly;
+                        if (worldY < minBlockY || worldY > maxBlockY) continue;
+                        for (int lx = 0; lx < 16; lx++) {
+                            int worldX = worldChunkBaseX + lx;
+                            if (Math.abs(worldX - playerPos.getX()) > radius) continue;
+                            for (int lz = 0; lz < 16; lz++) {
+                                int worldZ = worldChunkBaseZ + lz;
+                                if (Math.abs(worldZ - playerPos.getZ()) > radius) continue;
+                                BlockState state = section.getBlockState(lx, ly, lz);
+                                if (this.isBreakableLightBlock(state)) {
+                                    this.pendingLightBreaks.add(new BlockPos(worldX, worldY, worldZ));
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        });
+        }
     }
 
     private boolean isBreakableLightBlock(BlockState state) {
