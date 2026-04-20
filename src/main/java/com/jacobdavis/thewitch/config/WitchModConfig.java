@@ -20,24 +20,39 @@ public class WitchModConfig {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
         builder.comment("The Witch Mod Configuration").push("general");
         builder.comment("Witch Behavior Settings").push("witchBehavior");
-        SPAWN_INTERVAL_TICKS = builder.comment("Time between spawns in ticks (default = 48000 for 2 in-game days)").defineInRange("spawnIntervalTicks", 48000, 3000, Integer.MAX_VALUE);
-        STARE_TICKS = builder.comment("Ticks the player must stare to trigger the witch (default = 10 [half a second])").defineInRange("stareTicks", 10, 1, 60);
-        LIGHT_BREAK_RADIUS = builder.comment("Radius (in blocks) to break lights when triggered. WARNING: High values will cause tick delays! (default = 128)").defineInRange("lightBreakRadius", 128, 1, 512);
-        WITCH_SPEED = builder.comment("Witch movement speed after being triggered (default = 2.0)").defineInRange("witchSpeed", 2.0, 0.1, 5.0);
-        KILL_ZONE_RADIUS = builder.comment("Distance (in blocks) at which the witch teleports directly onto the player to deal damage. Player must sprint to stay outside this range. (default = 3.0)").defineInRange("killZoneRadius", 3.0, 1.0, 10.0);
-        AGGRESSION_RAMP_TICKS = builder.comment("Triggered ticks before the witch reaches maximum aggression (teleports nearly on top of the player). Lower = faster escalation. (default = 200)").defineInRange("aggressionRampTicks", 200, 20, 600);
-        SPAWN_CANDLES = builder.comment("Spawn candles when the witch is triggered and when lore books drop. (default = true)").define("spawnCandles", true);
+        SPAWN_INTERVAL_TICKS = builder.comment("Time between spawns in ticks (default = 48000 for 2 in-game days)")
+                .defineInRange("spawnIntervalTicks", 48000, 3000, Integer.MAX_VALUE);
+        STARE_TICKS = builder.comment("Ticks the player must stare to trigger the witch (default = 10 [half a second])")
+                .defineInRange("stareTicks", 10, 1, 60);
+        LIGHT_BREAK_RADIUS = builder.comment(
+                "Radius (in blocks) to break lights when triggered. WARNING: High values will cause tick delays! (default = 128)")
+                .defineInRange("lightBreakRadius", 128, 1, 512);
+        WITCH_SPEED = builder.comment("Witch movement speed after being triggered (default = 2.0)")
+                .defineInRange("witchSpeed", 2.0, 0.1, 5.0);
+        KILL_ZONE_RADIUS = builder.comment(
+                "Distance (in blocks) at which the witch teleports directly onto the player to deal damage. Player must sprint to stay outside this range. (default = 3.0)")
+                .defineInRange("killZoneRadius", 3.0, 1.0, 10.0);
+        AGGRESSION_RAMP_TICKS = builder.comment(
+                "Triggered ticks before the witch reaches maximum aggression (teleports nearly on top of the player). Lower = faster escalation. (default = 200)")
+                .defineInRange("aggressionRampTicks", 200, 20, 600);
+        SPAWN_CANDLES = builder
+                .comment("Spawn candles when the witch is triggered and when lore books drop. (default = true)")
+                .define("spawnCandles", true);
         builder.pop();
         builder.comment("Sound Settings").push("soundSettings");
-        PLAY_PROXIMITY_SOUND = builder.comment("Play the proximity sound with the player is near the witch. (default = true)").define("playProximitySound", true);
-        PLAY_SCREAM_SOUND = builder.comment("Play scream sound when the player attacks the witch. (default = true)").define("playScreamSound", true);
-        PLAY_ATTACK_SOUND = builder.comment("Play attack sound when the witch attacks the player. (default = true)").define("playAttackSound", true);
+        PLAY_PROXIMITY_SOUND = builder
+                .comment("Play the proximity sound with the player is near the witch. (default = true)")
+                .define("playProximitySound", true);
+        PLAY_SCREAM_SOUND = builder.comment("Play scream sound when the player attacks the witch. (default = true)")
+                .define("playScreamSound", true);
+        PLAY_ATTACK_SOUND = builder.comment("Play attack sound when the witch attacks the player. (default = true)")
+                .define("playAttackSound", true);
         builder.pop();
         builder.comment("Logging Settings").push("loggingSettings");
-        ENABLE_LOGGING = builder.comment("Enable logging for debugging purposes. (default = false)").define("enableLogging", false);
+        ENABLE_LOGGING = builder.comment("Enable logging for debugging purposes. (default = false)")
+                .define("enableLogging", false);
         builder.pop();
         builder.pop();
         COMMON_CONFIG = builder.build();
     }
 }
-
