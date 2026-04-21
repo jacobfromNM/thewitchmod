@@ -23,3 +23,18 @@ run
 
 # Files from Forge MDK
 forge*changelog.txt
+
+# Build & gradle files (not published to repo)
+build.gradle
+settings.gradle
+gradlew
+gradlew.bat
+gradle/
+.gitattributes
+
+# Misc project files
+README.txt
+LICENSE.txt
+CREDITS.txt
+changelog.txt
+.vscode/
